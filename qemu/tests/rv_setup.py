@@ -12,7 +12,7 @@ Requires: the client and guest VMs to be setup.
 
 import logging, os
 from os import system, getcwd, chdir
-from virttest import utils_misc, utils_spice
+from virttest import utils_misc, utils_spice, aexpect
 
 def install_rpm(session, name, rpm):
     """
@@ -93,25 +93,33 @@ def setup_loopback_linux(vm, params):
     session.cmd("chmod +x /etc/rc.modules") 
     session.cmd_output(params.get("reboot_command_vm2"))
 
-def setup_vm_linux(vm, params, env):
-    setup_type = params.get("setup_type", None)
+def setup_vm_linux(test, params, env, vm):
+    setup_type = vm.params.get("setup_type", None)
     logging.info("Setup type: %s" % setup_type)
-    if params.get("display_vm2", None) == "vnc":
-        logging.info("Display of VM is VNC; assuming it is client")    
+    if vm.params.get("display", None) == "vnc":
+        logging.info("Display of VM is VNC; assuming it is client")
         if setup_type == "gui":
             setup_gui_linux(vm, params, env)
         elif setup_type == "audio":
             setup_loopback_linux(vm, params)
         else:
-            raise error.TestFail("No setup_type specified")
+            logging.info("Nothing to setup on client")
+    else:
+        logging.info("Nothing to setup on guest")
+    logging.info("Setup complete")
 
-def setup_vm_windows(vm, params, env):
-    if params.get("display", None) == "vnc":
+def setup_vm_windows(test, params, env, vm):
+    setup_type = vm.params.get("setup_type", None)
+    logging.info("Setup type: %s" % setup_type)
+
+    if vm.params.get("display", None) == "vnc":
         logging.info("Display of VM is VNC; assuming it is client")
         utils_spice.install_rv_win(vm, params.get("rv_installer"), env)
         utils_spice.install_usbclerk_win(vm, params.get("usb_installer"), env)
-    else:
-        logging.info("Setting up Windows guest")
+        return
+
+    if setup_type == "guest_tools":
+        logging.info("Installing Windows guest tools")
         session = vm.wait_for_login(
                              timeout = int(params.get("login_timeout", 360)))
         winqxl = params.get("winqxl")
@@ -145,7 +153,7 @@ def setup_vm_windows(vm, params, env):
         try:
             output = session.cmd('sc queryex type= service state= all' +
                                  ' | FIND "vdservice"')
-        except ShellCmdError:
+        except aexpect.ShellCmdError:
             session.cmd_status('"C:\\Program Files\\7-Zip\\7z.exe" e C:\\wvdagent.zip -oC:\\')
             utils_spice.wait_timeout(2)
             session.cmd_status("C:\\vdservice.exe install")
@@ -178,13 +186,15 @@ def setup_vm_windows(vm, params, env):
             utils_spice.wait_timeout(5)
         vm.reboot()
          
-        logging.info("Setup for the Windows VM is complete")
+        logging.info("Installation of Windows guest tools completed")
 
-def setup_vm(vm, params, env):
-    if params.get("os_type") == "linux":
-        setup_vm_linux(vm, params, env)
-    elif params.get("os_type") == "windows":
-        setup_vm_windows(vm,params, env)
+    logging.info("Setup complete")
+
+def setup_vm(test, params, env, vm):
+    if vm.params.get("os_type") == "linux":
+        setup_vm_linux(test, params, env, vm)
+    elif vm.params.get("os_type") == "windows":
+        setup_vm_windows(test, params, env, vm)
     else:
         raise error.TestFail("Unsupported OS.")
 
@@ -199,4 +209,4 @@ def run_rv_setup(test, params, env):
 
     for vm in params.get("vms").split():
         logging.info("Setting up VM: " + vm)
-        setup_vm(env.get_vm(vm), params, env)
+        setup_vm(test, params, env, env.get_vm(vm))
