@@ -3041,32 +3041,19 @@ class VM(virt_vm.BaseVM):
                     cert_subj += host_ip
                     cert_subj = "\"%s\"" % cert_subj
                 else:
-                    dest_tls_port = ""
-                    cert_subj = ""
+                    dest_tls_port = None
+                    cert_subj = None
+
                 logging.debug("Informing migration to spice client")
-                commands = ["__com.redhat_spice_migrate_info",
-                            "spice_migrate_info",
-                            "client_migrate_info"]
+                cmdline = "client_migrate_info spice %s" % host_ip
+                if dest_port:
+                    cmdline += " %s" % dest_port
+                if dest_tls_port:
+                    cmdline += " %s" % dest_tls_port
+                if cert_subj:
+                    cmdline += " %s" % cert_subj
 
-                for command in commands:
-                    try:
-                        self.monitor.verify_supported_cmd(command)
-                    except qemu_monitor.MonitorNotSupportedCmdError:
-                        continue
-                    # spice_migrate_info requires host_ip, dest_port
-                    # client_migrate_info also requires protocol
-                    cmdline = "%s hostname=%s" % (command, host_ip)
-                    if command == "client_migrate_info":
-                        cmdline += " ,protocol=%s" % self.params['display']
-                    if dest_port:
-                        cmdline += ",port=%s" % dest_port
-                    if dest_tls_port:
-                        cmdline += ",tls-port=%s" % dest_tls_port
-                    if cert_subj:
-                        cmdline += ",cert-subject=%s" % cert_subj
-                    break
                 self.monitor.send_args_cmd(cmdline)
-
             if protocol in ["tcp", "rdma", "x-rdma"]:
                 if local:
                     uri = protocol + ":localhost:%d" % clone.migration_port
