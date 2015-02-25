@@ -20,7 +20,7 @@ autopart
 poweroff
 KVM_TEST_LOGGING
 
-%packages
+%packages --ignoremissing
 @base
 @core
 @development
