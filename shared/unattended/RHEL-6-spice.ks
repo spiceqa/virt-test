@@ -74,4 +74,5 @@ modprobe snd-mixer-oss
 modprobe snd-seq-oss
 EOF
 chmod +x /etc/rc.modules
+rm -f /etc/udev/rules.d/*persistent-net.rules
 %end
