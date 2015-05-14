@@ -5,7 +5,7 @@ reboot
 lang en_US.UTF-8
 keyboard us
 key --skip
-network --bootproto dhcp
+network --bootproto dhcp --device=eth0
 rootpw --plaintext 123456
 user --name=test --password=123456 --plaintext
 firewall --enabled --ssh

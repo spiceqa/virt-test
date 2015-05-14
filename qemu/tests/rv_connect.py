@@ -220,9 +220,14 @@ def launch_rv(client_vm, guest_vm, params):
     #usbredirection support
     if params.get("usb_redirection_add_device_vm2") == "yes":
         logging.info("USB redirection set auto redirect on connect for device \
-        class 0x08")
+class 0x08")
         cmd += " --spice-usbredir-redirect-on-connect=\"0x08,-1,-1,-1,1\""
-
+        client_root_session = client_vm.wait_for_login(
+            timeout=int(params.get("login_timeout", 360)),
+            username="root", password="123456")
+        usb_mount_path = params.get("file_path")
+        #USB was created by qemu (root). This prevents right issue.
+        client_root_session.cmd("chown test:test %s" % usb_mount_path)
         if not check_usb_policy(client_vm, params):
             logging.info("No USB policy.")
             add_usb_policy(client_vm)
@@ -299,7 +304,7 @@ def launch_rv(client_vm, guest_vm, params):
                 client_session.cmd("export SPICE_PROXY=%s" % proxy)
             elif client_vm.params.get("os_type") == "windows":
                 client_session.cmd_output("SET SPICE_PROXY=%s" % proxy)
-                        
+
 
     if not params.get("rv_verify") == "only":
         try:
