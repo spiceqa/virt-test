@@ -74,5 +74,37 @@ modprobe snd-mixer-oss
 modprobe snd-seq-oss
 EOF
 chmod +x /etc/rc.modules
-rm -f /etc/udev/rules.d/*persistent-net.rules
+%end
+
+####################
+# Escape MAC binding
+####################
+%post --interpreter /bin/sh
+PROG="${PROG:-${0##*/}}"
+DESTDIR=
+CONFDIR="$DESTDIR/etc/udev/rules.d"
+CONFIG="$CONFDIR/69-bypass-persistent-net.rules"
+PERSISTENT_CONFIG="$CONFDIR/70-persistent-net.rules"
+
+cat << 'EOF' >> "$CONFIG"
+# Information:
+# Break MAC <-> name binding by udev.
+# Added by KickStart script
+#
+ACTION!="add", GOTO="net_generator_end"
+SUBSYSTEM!="net", GOTO="net_generator_end"
+
+# ignore the interface if a name has already been set
+NAME=="?*", GOTO="net_generator_end"
+
+# Keep kernel name.
+NAME="$kernel"
+
+LABEL="net_generator_end"
+EOF
+
+if [ -f "$PERSISTENT_CONFIG" ]; then
+    rm -f "$PERSISTENT_CONFIG"
+fi
+echo "$PROG: success."
 %end
