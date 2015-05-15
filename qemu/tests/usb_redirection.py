@@ -15,12 +15,12 @@ RHEL 6.4.
 This means there is no way how to simulate USB redirection in RHEL 6.3. In
 RHEL6.4 is possible to use remote-viewer option. In future it will be more easy
 with qemu-kvm monitor command
-"""
 
+#TODO when possible, update for qemu-monitor command
+"""
 import logging
 from virttest import utils_misc, utils_spice
 from autotest.client.shared import utils, error
-
 
 def run_usb_redirection(test, params, env):
     """
@@ -59,7 +59,13 @@ def run_usb_redirection(test, params, env):
             timeout=int(params.get("login_timeout", 360)),
             username="root", password="123456")
 
-    #convert human readable into bytes. then nice and easy get count
+    #remove old file if exists
+    try:
+        guest_session.cmd("rm %s" % params["file_tmp_path"])
+    except:
+        pass
+
+    #convert human readable into bytes. then nice and easy get params for `dd`
     byte_map = {'k':1, 'M':2, 'G':3}
     file_size = params['file_size']
     bs = params['bs']
@@ -80,11 +86,12 @@ def run_usb_redirection(test, params, env):
                                       params["file_tmp_path"],
                                       params["usb_file"]
                                      ))
+
     logging.info("MD5SUM on guest: %s" % md5sum_guest)
-    #USB was mounted by root when tested this test. This prevents right issue
-    guest_root_session.cmd("chmod 777 %s" % params["file_path"])
+
     #copy file from guest to USB(USB is mounted automaticaly to /media )
     if params.get("usb_migrate", "no") == "yes":
+        logging.info("Start copy file to USB and migrate")
         copy_background = utils.InterruptedThread(
                             guest_session.cmd, ("cp %s%s %s%s" % (
                             params["file_tmp_path"],
@@ -92,7 +99,6 @@ def run_usb_redirection(test, params, env):
                             params["file_path"],
                             params["usb_file"]),),
                             kwargs={'timeout' : 240})
-
         copy_background.start()
         try:
             while copy_background.isAlive():
@@ -105,24 +111,34 @@ def run_usb_redirection(test, params, env):
         else:
             copy_background.join()
     else:
-        guest_session.cmd("cp %s%s %s%s &" % (
-                                              params["file_tmp_path"],
-                                              params["usb_file"],
-                                              params["file_path"],
-                                              params["usb_file"]
-                                              ), timeout=240)
+        logging.info("Start copy file to USB")
+        guest_session.cmd("cp %s%s %s%s" % (params["file_tmp_path"],
+                                            params["usb_file"],
+                                            params["file_path"],
+                                            params["usb_file"]
+                                            ), timeout=240)
 
     md5sum_guest_usb = guest_session.cmd("md5sum %s%s | cut -f1 -d\" \"" % (
-                                        params["file_path"],
-                                        params["usb_file"]
-                                        ))
-    logging.info("MD5SUM on guest USB: %s" % md5sum_guest_usb)
-    #USB hold by guest is freed after VM shutdown (maybe bug? Should not be closing
+                                    params["file_path"],
+                                    params["usb_file"]
+                                    ))
+    logging.info("Sync after copy")
+    guest_session.cmd("sync", timeout=300)
+    utils_spice.wait_timeout(2)
+    try:
+        guest_session.cmd("rm %s%s" % (params["file_tmp_path"], params["usb_file"]))
+    except:
+        pass
+    logging.debug("MD5SUM on guest USB: %s" % md5sum_guest_usb)
+    #USB holt by guest is freed after VM shutdown (maybe bug? Should not be closing
     #client enough?)
+    utils_spice.wait_timeout(2)
     guest_vm.destroy()
-    guest_session.close()
-    client_session.cmd("pkill remote-viewer")
-
+    #remote-viewer should hangs after destroy
+    try:
+        client_session.cmd("pkill remote-viewer")
+    except:
+        pass
     """
     this is a workaround. actual qemu not supports hot plug/unplug of USB
     so now guest has to be killet to free plugged USB
@@ -130,10 +146,13 @@ def run_usb_redirection(test, params, env):
     so this is a workarount to wait until USB is mounted
     """
     while True:
-        utils_spice.wait_timeout(10)
         get_mount = client_session.cmd_output("mount | grep %s" % params['usb_name'])
+        logging.info("Is USB mounted back yet ? %s" % get_mount)
         if get_mount:
-            exit()
+            logging.info("YES")
+            break
+        utils_spice.wait_timeout(2)
+    utils_spice.wait_timeout(2)
 
     #check md5sum on client USB
     md5sum_client_usb = client_session.cmd("md5sum %s%s | cut -f1 -d\" \"" % (
@@ -141,22 +160,30 @@ def run_usb_redirection(test, params, env):
                                       params["usb_file"]
                                      ))
 
-    logging.info("MD5SUM on client USB: %s" % md5sum_client_usb)
+    logging.debug("MD5SUM on client USB: %s" % md5sum_client_usb)
     #copy file to client
-    client_session.cmd("cp %s%s %s%s" % (
-                                          params["file_path"],
-                                          params["usb_file"],
-                                          params["file_tmp_path"],
-                                          params["usb_file"]
-                                          ))
+    client_session.cmd("cp %s%s %s%s" % (params["file_path"],
+                                         params["usb_file"],
+                                         params["file_tmp_path"],
+                                         params["usb_file"]
+                                         ))
     #check md5sum
     md5sum_client = client_session.cmd("md5sum %s%s | cut -f1 -d\" \"" % (
                                       params["file_path"],
                                       params["usb_file"]
                                      ))
-    logging.info("MD5SUM on client: %s", md5sum_client)
+    logging.debug("MD5SUM on client: %s", md5sum_client)
+    try:
+        guest_session.cmd("rm %s%s" % (params["file_path"], params["usb_file"]))
+    except:
+        pass
+    logging.info("MD5SUM :\nguest: %s\nguest_usb: %s\nclient_usb: %s\nclient: %s",
+                             md5sum_guest,
+                             md5sum_guest_usb,
+                             md5sum_client_usb,
+                             md5sum_client)
 
-    if md5sum_guest == md5sum_guest_usb == md5sum_client_usb ==  md5sum_client:
+    if md5sum_guest == md5sum_guest_usb == md5sum_client_usb ==  md5sum_client != None:
         logging.info("MD5SUM check PASS")
         return True
     else:
