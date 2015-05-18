@@ -41,7 +41,7 @@ str = """
 """
 
 parser = cartesian_config.Parser()
-parser.parse_file(os.path.join(virt_test_dir, "qemu", "cfg", "spice-vm-install.cfg"))
+parser.parse_file(os.path.join(virt_test_dir, "qemu", "cfg", "tests-spice.cfg"))
 
 if args:
     # We get test parameters from command line
