@@ -81,27 +81,15 @@ def setup_gui_linux(vm, params, env):
         install_rpm(session, "wmctrl", wmctrlrpm)
     deploy_tests_linux(vm, params)
 
-def setup_loopback_linux(vm, params):
-    session = vm.wait_for_login(
-                        username = "root", 
-                        password = "123456", 
-                        timeout=int(params.get("login_timeout", 360)))
-    session.cmd("echo modprobe snd-aloop >> /etc/rc.modules")
-    session.cmd("echo modprobe snd-pcm-oss >> /etc/rc.modules")
-    session.cmd("echo modprobe snd-mixer-oss >> /etc/rc.modules")
-    session.cmd("echo modprobe snd-seq-oss >> /etc/rc.modules")
-    session.cmd("chmod +x /etc/rc.modules") 
-    session.cmd_output(params.get("reboot_command_vm2"))
-
 def setup_vm_linux(test, params, env, vm):
-    setup_type = vm.params.get("setup_type", None)
+    setup_type = params.get("setup_type", None)
     logging.info("Setup type: %s" % setup_type)
     if vm.params.get("display", None) == "vnc":
         logging.info("Display of VM is VNC; assuming it is client")
         if setup_type == "gui":
             setup_gui_linux(vm, params, env)
         elif setup_type == "audio":
-            setup_loopback_linux(vm, params)
+            logging.info("Nothing to setup for audio")
         else:
             logging.info("Nothing to setup on client")
     else:

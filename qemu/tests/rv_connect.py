@@ -263,7 +263,7 @@ class 0x08")
             cmd += " --spice-smartcard-certificates " + gencerts
 
     if client_vm.params.get("os_type") == "linux":
-        cmd = "nohup " + cmd + " &> /dev/null &"  # Launch it on background
+        cmd = "nohup " + cmd + " &> ~/rv.log &"  # Launch it on background
         if rv_ld_library_path:
             cmd = "export LD_LIBRARY_PATH=" + rv_ld_library_path + ";" + cmd
 
