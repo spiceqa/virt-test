@@ -40,9 +40,8 @@ def run_rv_fullscreen(test, params, env):
     client_session.cmd("export DISPLAY=:0.0")
 
     try:
-        client_session.cmd("xrandr | grep '*' >/tmp/res")
-        client_res_raw = client_session.cmd("cat /tmp/res|awk '{print $1}'")
-        client_res = client_res_raw.split()[0]
+        guest_res_raw = vm_session.cmd_output("xrandr -d :0 | grep '*'")
+        guest_res = guest_res_raw.split()[0]
     except ShellCmdError:
         raise error.TestFail("Could not get guest resolution, xrandr output:" +
                              " %s" % client_res_raw)
@@ -54,8 +53,7 @@ def run_rv_fullscreen(test, params, env):
     guest_session.cmd("export DISPLAY=:0.0")
 
     try:
-        guest_session.cmd("xrandr | grep '*' >/tmp/res")
-        guest_res_raw = guest_session.cmd("cat /tmp/res|awk '{print $1}'")
+        guest_res_raw = vm_session.cmd_output("xrandr -d :0 | grep '*'")
         guest_res = guest_res_raw.split()[0]
     except ShellCmdError:
         raise error.TestFail("Could not get guest resolution, xrandr output:" +
