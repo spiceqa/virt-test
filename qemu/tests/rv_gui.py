@@ -12,6 +12,9 @@ import os, logging
 from autotest.client.shared import error
 from virttest.aexpect import ShellCmdError
 from virttest import utils_net, utils_spice
+from time import sleep
+
+window_title = "'vm1 (1) - Remote Viewer'"
 
 def getres(vm_session):
     """
@@ -22,8 +25,9 @@ Gets the resolution of a VM
 
     guest_res_raw = None
     try:
-        vm_session.cmd("xrandr | grep '*' >/tmp/res")
-        guest_res_raw = vm_session.cmd("cat /tmp/res|awk '{print $1}'")
+        #vm_session.cmd_output("xrandr -d :0 | grep '*' > /tmp/res")
+        #guest_res_raw = vm_session.cmd("cat /tmp/res|awk '{print $1}'")
+        guest_res_raw = vm_session.cmd_output("xrandr -d :0 2> /dev/null | grep '*'")
         guest_res = guest_res_raw.split()[0]
     except ShellCmdError:
         raise error.TestFail("Could not get guest resolution, xrandr output:" +
@@ -41,8 +45,9 @@ Gets the geometry of the rv_window from the client session
 @param host_port: host port where the vms are running
 @param host_ip: host ip where the vms are running
 """
-    rv_xinfo_cmd = "xwininfo -name 'spice://%s?port=%s (1) - Remote Viewer'" \
-                   % (host_ip, host_port)
+    #rv_xinfo_cmd = "xwininfo -name 'spice://%s?port=%s (1) - Remote Viewer'" \
+    #               % (host_ip, host_port)
+    rv_xinfo_cmd = "xwininfo -name %s" % window_title
     rv_xinfo_cmd += " | grep geometry"
     try:
         rv_res_raw = client_session.cmd(rv_xinfo_cmd)
@@ -64,8 +69,9 @@ Gets the coordinates of the 4 corners of the rv window
 @param host_port: host port where the vms are running
 @param host_ip: host ip where the vms are running
 """
-    rv_xinfo_cmd = "xwininfo -name 'spice://%s?port=%s (1) - Remote Viewer'" \
-                   % (host_ip, host_port)
+#    rv_xinfo_cmd = "xwininfo -name 'spice://%s?port=%s (1) - Remote Viewer'" \
+#                   % (host_ip, host_port)
+    rv_xinfo_cmd = "xwininfo -name %s" % window_title
     rv_xinfo_cmd += " | grep Corners"
     try:
         rv_corners_raw = client_session.cmd(rv_xinfo_cmd)
@@ -202,8 +208,8 @@ Tests GUI automation of remote-viewer
     output = client_session.cmd('cat /etc/redhat-release')
     isRHEL7 = "release 7." in output
 
-    client_session.cmd("export DISPLAY=:0.0")
-    guest_session.cmd("export DISPLAY=:0.0")
+    client_session.cmd("export DISPLAY=:0")
+    guest_session.cmd("export DISPLAY=:0")
     #if isRHEL7:
     # pass
     # client_session.cmd('mkdir /home/test/.dbus/session-bus/
@@ -262,12 +268,6 @@ Tests GUI automation of remote-viewer
             cmd += " 'spice://%s:%s'" % (host_ip, host_port)
             if ticket:
                 cmd += " %s > /dev/null 2>&1" % ticket
-        if (i == "help" or i =="help_accesskeys"):
-            output = client_session.cmd('cat /etc/redhat-release')
-            if "release 7." in output:
-                cmd += " " + rv_version_el7
-            else:
-                cmd += " " + rv_version
 
         #Run the test
         client_session_dt = client_vm.wait_for_login(
@@ -409,8 +409,9 @@ Tests GUI automation of remote-viewer
         if i == "autoresize_on" or i == "autoresize_off":
             logging.info("Attempting to change the window size of rv to:" + \
                          str(changex) + "x" + str(changey))
-            wmctrl_cmd = "wmctrl -r 'spice://%s?port=%s (1) - Remote Viewer'" \
-                   % (host_ip, host_port)
+            #wmctrl_cmd = "wmctrl -r 'spice://%s?port=%s (1) - Remote Viewer'" \
+            #       % (host_ip, host_port)
+            wmctrl_cmd = "wmctrl -r %s" % window_title
             wmctrl_cmd += " -e 0,0,0," + str(changex) + "," + str(changey)
             output = client_session.cmd(wmctrl_cmd)
             logging.info("Original res: " + guest_res)
