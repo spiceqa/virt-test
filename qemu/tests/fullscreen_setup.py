@@ -70,7 +70,7 @@ def run_fullscreen_setup(test, params, env):
                  current + " to: " + resolution)
 
     # Start vdagent daemon
-    utils_spice.start_vdagent(guest_root_session, test_timeout)
+    utils_spice.start_vdagent(guest_root_session, "linux", test_timeout)
 
     client_vm = env.get_vm(params["client_vm"])
     client_vm.verify_alive()
