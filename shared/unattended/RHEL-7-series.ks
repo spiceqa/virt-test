@@ -1,5 +1,5 @@
 install
-KVM_TEST_MEDIUM
+#KVM_TEST_MEDIUM
 #xconfig --startxonboot
 #text
 shutdown
