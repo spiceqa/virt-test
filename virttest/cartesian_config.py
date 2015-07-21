@@ -3,127 +3,131 @@
 """
 Cartesian configuration format file parser.
 
- Filter syntax:
- , means OR
- .. means AND
- . means IMMEDIATELY-FOLLOWED-BY
- (xx=yy) where xx=VARIANTS_name and yy=VARIANT
+Filter syntax:
 
- Example:
- qcow2..(guest_os=Fedora).14, RHEL.6..raw..boot, smp2..qcow2..migrate..ide
- means match all dicts whose names have:
- (qcow2 AND ((guest_os=Fedora) IMMEDIATELY-FOLLOWED-BY 14)) OR
- ((RHEL IMMEDIATELY-FOLLOWED-BY 6) AND raw AND boot) OR
- (smp2 AND qcow2 AND migrate AND ide)
+* ``,`` means ``OR``
+* ``..`` means ``AND``
+* ``.`` means ``IMMEDIATELY-FOLLOWED-BY``
+* ``(xx=yy)`` where ``xx=VARIANT_NAME`` and ``yy=VARIANT_VALUE``
+
+Example:
+
+::
+
+     qcow2..(guest_os=Fedora).14, RHEL.6..raw..boot, smp2..qcow2..migrate..ide
+
+means match all dicts whose names have:
+
+::
+
+    (qcow2 AND ((guest_os=Fedora) IMMEDIATELY-FOLLOWED-BY 14)) OR
+    ((RHEL IMMEDIATELY-FOLLOWED-BY 6) AND raw AND boot) OR
+    (smp2 AND qcow2 AND migrate AND ide)
+
+Note:
+
+* ``qcow2..Fedora.14`` is equivalent to ``Fedora.14..qcow2``.
+* ``qcow2..Fedora.14`` is not equivalent to ``qcow2..14.Fedora``.
+* ``ide, scsi`` is equivalent to ``scsi, ide``.
+
+Filters can be used in 3 ways:
+
+::
+
+    only <filter>
+    no <filter>
+    <filter>:
+
+The last one starts a conditional block.
+
+Formal definition: Regexp come from `python <http://docs.python.org/2/library/re.html>`__.
+They're not deterministic, but more readable for people. Spaces between
+terminals and nonterminals are only for better reading of definitions.
+
+The base of the definitions come verbatim as follows:
 
 
- Note:
- 'qcow2..Fedora.14' is equivalent to 'Fedora.14..qcow2'.
- 'qcow2..Fedora.14' is not equivalent to 'qcow2..14.Fedora'.
- 'ide, scsi' is equivalent to 'scsi, ide'.
+::
 
- Filters can be used in 3 ways:
- only <filter>
- no <filter>
- <filter>:
- The last one starts a conditional block.
+    E = {\\n, #, :, "-", =, +=, <=, ?=, ?+=, ?<=, !, < , del, @, variants, include, only, no, name, value}
+
+    N = {S, DEL, FILTER, FILTER_NAME, FILTER_GROUP, PN_FILTER_GROUP, STAT, VARIANT, VAR-TYPE, VAR-NAME, VAR-NAME-F, VAR, COMMENT, TEXT, DEPS, DEPS-NAME-F, META-DATA, IDENTIFIER}``
 
 
-Formal definition:
+    I = I^n | n in N              // indentation from start of line
+                                  // where n is indentation length.
+    I = I^n+x | n,x in N          // indentation with shift
 
- regexp from python http://docs.python.org/2/library/re.html
- Not deterministic but more readable for people.
- Spaces between terminals and nontermials are only for better
- reading of definitions.
+    start symbol = S
+    end symbol = eps
 
-  E={\n, #, :, "-", =, +=, <=, ?=, ?+=, ?<=, !, < , del, @, variants, include,
-    only, no, name, value}
-  N={S, DEL, FILTER, FILTER_NAME, FILTER_GROUP, PN_FILTER_GROUP,
-    STAT, VARIANT, VAR-TYPE, VAR-NAME, VAR-NAME-F, VAR, COMMENT,
-    TEXT, DEPS, DEPS-NAME-F, META-DATA, IDENTIFIER}
+    S -> I^0+x STATV | eps
 
-  I = I^n | n in N              // indentation from start of line
-                                // where n is indentation length.
-  I = I^n+x | n,x in N          // indentation with shift
-  start symbol = S
-  end symbol = eps
+    I^n    STATV
+    I^n    STATV
 
-  S -> I^0+x STATV | eps
+    I^n STATV -> I^n STATV \\n I^n STATV | I^n STAT | I^n variants VARIANT
+    I^n STAT -> I^n STAT \\n I^n STAT | I^n COMMENT | I^n include INC
+    I^n STAT -> I^n del DEL | I^n FILTER
 
- #
- #I^n    STATV
- #I^n    STATV
- #
+    DEL -> name \\n
 
-  I^n STATV -> I^n STATV \n I^n STATV | I^n STAT | I^n variants VARIANT
+    I^n STAT -> I^n name = VALUE | I^n name += VALUE | I^n name <= VALUE
+    I^n STAT -> I^n name ?= VALUE | I^n name ?+= VALUE | I^n name ?<= VALUE
 
-  I^n STAT -> I^n STAT \n I^n STAT | I^n COMMENT | I^n include INC
-  I^n STAT -> I^n del DEL | I^n FILTER
+    VALUE -> TEXT \\n | 'TEXT' \\n | "TEXT" \\n
 
-  DEL -> name \n
+    COMMENT_BLOCK -> #TEXT | //TEXT
+    COMMENT ->  COMMENT_BLOCK\\n
+    COMMENT ->  COMMENT_BLOCK\\n
 
-  I^n STAT -> I^n name = VALUE | I^n name += VALUE | I^n name <= VALUE
-  I^n STAT -> I^n name ?= VALUE | I^n name ?+= VALUE | I^n name ?<= VALUE
+    TEXT = [^\\n] TEXT            //python format regexp
 
-  VALUE -> TEXT \n | 'TEXT' \n | "TEXT" \n
+    I^n    variants VAR #comments:             add possibility for comment
+    I^n+x       VAR-NAME: DEPS
+    I^n+x+x2        STATV
+    I^n         VAR-NAME:
 
-  COMMENT_BLOCK -> #TEXT | //TEXT
-  COMMENT ->  COMMENT_BLOCK\n
-  COMMENT ->  COMMENT_BLOCK\n
+    IDENTIFIER -> [A-Za-z0-9][A-Za-z0-9_-]*
 
-  TEXT = [^\n] TEXT            //python format regexp
+    VARIANT -> VAR COMMENT_BLOCK\\n I^n+x VAR-NAME
+    VAR -> VAR-TYPE: | VAR-TYPE META-DATA: | :         // Named | unnamed variant
 
- #
- #I^n    variants VAR #comments:             add possibility for comment
- #I^n+x       VAR-NAME: DEPS
- #I^n+x+x2        STATV
- #I^n         VAR-NAME:
- #
+    VAR-TYPE -> IDENTIFIER
 
-  IDENTIFIER -> [A-Za-z0-9][A-Za-z0-9_-]*
+    variants _name_ [xxx] [zzz=yyy] [uuu]:
 
-  VARIANT -> VAR COMMENT_BLOCK\n I^n+x VAR-NAME
-  VAR -> VAR-TYPE: | VAR-TYPE META-DATA: | :         // Named | unnamed variant
+    META-DATA -> [IDENTIFIER] | [IDENTIFIER=TEXT] | META-DATA META-DATA
 
-  VAR-TYPE -> IDENTIFIER
+    I^n VAR-NAME -> I^n VAR-NAME \\n I^n VAR-NAME | I^n VAR-NAME-N \\n I^n+x STATV
+    VAR-NAME-N -> - @VAR-NAME-F: DEPS | - VAR-NAME-F: DEPS
+    VAR-NAME-F -> [a-zA-Z0-9\\._-]+                  // Python regexp
 
- #
- # variants _name_ [xxx] [zzz=yyy] [uuu]:
- #
+    DEPS -> DEPS-NAME-F | DEPS-NAME-F,DEPS
+    DEPS-NAME-F -> [a-zA-Z0-9\\._- ]+                // Python regexp
 
-  META-DATA -> [IDENTIFIER] | [IDENTIFIER=TEXT] | META-DATA META-DATA
+    INC -> name \\n
 
-  I^n VAR-NAME -> I^n VAR-NAME \n I^n VAR-NAME | I^n VAR-NAME-N \n I^n+x STATV
-  VAR-NAME-N -> - @VAR-NAME-F: DEPS | - VAR-NAME-F: DEPS
-  VAR-NAME-F -> [a-zA-Z0-9\._-]+                  // Python regexp
 
-  DEPS -> DEPS-NAME-F | DEPS-NAME-F,DEPS
-  DEPS-NAME-F -> [a-zA-Z0-9\._- ]+                // Python regexp
+    FILTER_GROUP: STAT
+        STAT
 
-  INC -> name \n
+    I^n STAT -> I^n PN_FILTER_GROUP | I^n ! PN_FILTER_GROUP
 
- #
- # FILTER_GROUP: STAT
- #     STAT
- #
-  I^n STAT -> I^n PN_FILTER_GROUP | I^n ! PN_FILTER_GROUP
+    PN_FILTER_GROUP -> FILTER_GROUP: \\n I^n+x STAT
+    PN_FILTER_GROUP -> FILTER_GROUP: STAT \\n I^n+x STAT
 
-  PN_FILTER_GROUP -> FILTER_GROUP: \n I^n+x STAT
-  PN_FILTER_GROUP -> FILTER_GROUP: STAT \n I^n+x STAT
+    only FILTER_GROUP
+    no FILTER_GROUP
 
- #
- # only FILTER_GROUP
- # no FILTER_GROUP
+    FILTER -> only FILTER_GROUP \\n | no FILTER_GROUP \\n
 
-  FILTER -> only FILTER_GROUP \n | no FILTER_GROUP \n
+    FILTER_GROUP -> FILTER_NAME
+    FILTER_GROUP -> FILTER_GROUP..FILTER_GROUP
+    FILTER_GROUP -> FILTER_GROUP,FILTER_GROUP
 
-  FILTER_GROUP -> FILTER_NAME
-  FILTER_GROUP -> FILTER_GROUP..FILTER_GROUP
-  FILTER_GROUP -> FILTER_GROUP,FILTER_GROUP
-
-  FILTER_NAME -> FILTER_NAME.FILTER_NAME
-  FILTER_NAME -> VAR-NAME-F | (VAR-NAME-F=VAR-NAME-F)
-
+    FILTER_NAME -> FILTER_NAME.FILTER_NAME
+    FILTER_NAME -> VAR-NAME-F | (VAR-NAME-F=VAR-NAME-F)
 
 :copyright: Red Hat 2008-2013
 """
@@ -135,8 +139,9 @@ import logging
 import re
 import string
 import sys
+import copy
 
-_reserved_keys = set(("name", "shortname", "dep"))
+_reserved_keys = set(("name", "shortname", "dep", "_short_name_map_file", "_name_map_file"))
 
 num_failed_cases = 5
 
@@ -320,6 +325,15 @@ class NoFilter(NoOnlyFilter):
         return "No %s" % (self.filter)
 
 
+class JoinFilter(NoOnlyFilter):
+
+    def __str__(self):
+        return "Join %s" % (self.filter)
+
+    def __repr__(self):
+        return "Join %s" % (self.filter)
+
+
 class BlockFilter(object):
     __slots__ = ["blocked"]
 
@@ -380,9 +394,9 @@ class StrReader(object):
             line = line.rstrip().expandtabs()
             stripped_line = line.lstrip()
             indent = len(line) - len(stripped_line)
-            if (not stripped_line
-                or stripped_line.startswith("#")
-                    or stripped_line.startswith("//")):
+            if (not stripped_line or
+                    stripped_line.startswith("#") or
+                    stripped_line.startswith("//")):
                 continue
             self._lines.append((stripped_line, indent, linenum + 1))
 
@@ -427,7 +441,7 @@ class FileReader(StrReader):
         """
         Initialize the reader.
 
-        @parse filename: The name of the input file.
+        :parse filename: The name of the input file.
         """
         StrReader.__init__(self, open(filename).read())
         self.filename = filename
@@ -522,7 +536,7 @@ class Node(object):
                 child.dump(indent + 3, recurse)
 
 
-match_subtitute = re.compile("\$\{(.+)\}")
+match_subtitute = re.compile("\$\{(.+?)\}")
 
 
 def _subtitution(value, d):
@@ -696,6 +710,16 @@ class LDefault(Token):
 class LOnly(Token):
     __slots__ = []
     identifier = "only"
+
+
+class LSuffix(Token):
+    __slots__ = []
+    identifier = "suffix"
+
+
+class LJoin(Token):
+    __slots__ = []
+    identifier = "join"
 
 
 class LNo(Token):
@@ -900,7 +924,7 @@ class LUpdateFileMap(LOperators):
 
     def apply_to_dict(self, d):
         dest = self.dest
-        if not dest in d:
+        if dest not in d:
             d[dest] = {}
 
         if self.shortname in d[dest]:
@@ -908,6 +932,31 @@ class LUpdateFileMap(LOperators):
             d[dest][self.shortname] = "%s.%s" % (self.name, old_name)
         else:
             d[dest][self.shortname] = self.name
+
+
+class Suffix(LOperators):
+    __slots__ = []
+    identifier = "apply_suffix"
+
+    def __str__(self):
+        return "Suffix: %s" % (self.value)
+
+    def __repr__(self):
+        return "Suffix %s" % (self.value)
+
+    def __eq__(self, o):
+        if isinstance(o, self.__class__):
+            if self.value == o.value:
+                return True
+
+    def apply_to_dict(self, d):
+        for key in d.copy():
+            if key not in _reserved_keys:
+                # Store key as a tuple: (key, suffix1, suffix2, suffix3,....)
+                # This allows us to manipulate later on suffixes
+                # Add suffix to the key, remove the old key
+                new_key = (key if isinstance(key, tuple) else (key,)) + (self.value,)
+                d[new_key] = d.pop(key)
 
 
 spec_iden = "_-"
@@ -1000,6 +1049,18 @@ class Lexer(object):
             if line.startswith("del "):
                 yield LDel()
                 pos = 3
+                while line[pos].isspace():
+                    pos += 1
+        elif l0 == "s":
+            if line.startswith("suffix "):
+                yield LSuffix()
+                pos = 6
+                while line[pos].isspace():
+                    pos += 1
+        elif l0 == "j":
+            if line.startswith("join "):
+                yield LJoin()
+                pos = 4
                 while line[pos].isspace():
                     pos += 1
 
@@ -1100,7 +1161,7 @@ class Lexer(object):
         if end_tokens is None:
             end_tokens = [LEndL]
         token = self.generator.next()
-        while not type(token) in end_tokens:
+        while type(token) not in end_tokens:
             yield token
             token = self.generator.next()
         yield token
@@ -1172,8 +1233,8 @@ class Lexer(object):
             return type(token), token
         else:
             raise ParserError("Expected %s got ['%s']=[%s]" %
-                             ([x.identifier for x in lType],
-                              token.identifier, token),
+                              ([x.identifier for x in lType],
+                               token.identifier, token),
                               self.line, self.filename, self.linenum)
 
     def get_next_check_nw(self, lType):
@@ -1184,8 +1245,8 @@ class Lexer(object):
             return type(token), token
         else:
             raise ParserError("Expected %s got ['%s']" %
-                             ([x.identifier for x in lType],
-                              token.identifier),
+                              ([x.identifier for x in lType],
+                               token.identifier),
                               self.line, self.filename, self.linenum)
 
     def check_token(self, token, lType):
@@ -1193,8 +1254,8 @@ class Lexer(object):
             return type(token), token
         else:
             raise ParserError("Expected %s got ['%s']" %
-                             ([x.identifier for x in lType],
-                              token.identifier),
+                              ([x.identifier for x in lType],
+                               token.identifier),
                               self.line, self.filename, self.linenum)
 
 
@@ -1230,7 +1291,7 @@ def parse_filter(lexer, tokens):
     and_filter = []
     con_filter = []
     dots = 1
-    while not typet in [LEndL]:
+    while typet not in [LEndL]:
         if typet in [LIdentifier, LLRBracket]:        # join    identifier
             if typet == LLRBracket:    # (xxx=ttt)
                 _, ident = lexer.check_token(next_nw(tokens),
@@ -1386,7 +1447,7 @@ class Parser(object):
         if not node:
             node = self.node
         block_allowed = [LVariants, LIdentifier, LOnly,
-                         LNo, LInclude, LDel, LNotCond]
+                         LNo, LInclude, LDel, LNotCond, LSuffix, LJoin]
 
         variants_allowed = [LVariant]
 
@@ -1407,6 +1468,13 @@ class Parser(object):
         # others block or operation. Increase speed almost twice.
         pre_dict = {}
         lexer.set_fast()
+
+        # Suffix be applied as the latests operator in the dictionary.
+        # Reasons:
+        #     1. Escape multiply suffix operators
+        #     2. Affect all elements in current block
+        suffix = None
+
         try:
             while True:
                 lexer.set_prev_indent(prev_indent)
@@ -1415,6 +1483,9 @@ class Parser(object):
                     if pre_dict:
                         # flush pre_dict to node content.
                         pre_dict = apply_predict(lexer, node, pre_dict)
+                    if suffix:
+                        # Node has suffix, apply it to all elements
+                        node.content.append(suffix)
                     return node
 
                 indent = token.length
@@ -1496,7 +1567,7 @@ class Parser(object):
                     if "default" in meta:
                         meta_with_default = True
                     meta_in_expand_defautls = False
-                    if not var_name in self.expand_defaults:
+                    if var_name not in self.expand_defaults:
                         meta_in_expand_defautls = True
                     node4 = Node()
                     while True:
@@ -1575,7 +1646,7 @@ class Parser(object):
                                     meta["default"].remove(wd)
 
                         if (is_default and not already_default and
-                           meta_in_expand_defautls):
+                                meta_in_expand_defautls):
                             node3.default = True
                             already_default = True
 
@@ -1584,7 +1655,7 @@ class Parser(object):
                         op = LUpdateFileMap()
                         op.set_operands(lexer.filename,
                                         ".".join(str(x)
-                                        for x in node3.name))
+                                                 for x in node3.name))
                         node3.content += [(lexer.filename,
                                            lexer.linenum,
                                            op)]
@@ -1592,7 +1663,7 @@ class Parser(object):
                         op = LUpdateFileMap()
                         op.set_operands(lexer.filename,
                                         ".".join(str(x.name)
-                                        for x in node3.name),
+                                                 for x in node3.name),
                                         "_short_name_map_file")
                         node3.content += [(lexer.filename,
                                            lexer.linenum,
@@ -1630,7 +1701,7 @@ class Parser(object):
                     var_name = ""
                     meta.clear()
                     # [meta1=xxx] [yyy] [xxx]
-                    while not vtypet in [LColon, LEndL]:
+                    while vtypet not in [LColon, LEndL]:
                         if vtypet == LIdentifier:
                             if var_name != "":
                                 raise ParserError("Syntax ERROR expected"
@@ -1643,14 +1714,14 @@ class Parser(object):
                             typet, _ = lexer.get_next_check_nw([LSet,
                                                                 LRBracket])
                             if typet == LRBracket:  # [xxx]
-                                if not ident in meta:
+                                if ident not in meta:
                                     meta[ident] = []
                                 meta[ident].append(True)
                             elif typet == LSet:  # [xxx = yyyy]
                                 tokens = lexer.get_until_no_white([LRBracket,
-                                                                  LEndL])
+                                                                   LEndL])
                                 if type(tokens[-1]) == LRBracket:
-                                    if not ident in meta:
+                                    if ident not in meta:
                                         meta[ident] = []
                                     meta[ident].append(tokens[:-1])
                                 else:
@@ -1693,13 +1764,34 @@ class Parser(object):
                         node.content += [(lexer.filename, lexer.linenum,
                                           NoFilter(lfilter, lexer.line))]
 
+                elif typet == LJoin:
+                    # Parse:
+                    #    join (filter=text)..aaa.bbb, xxxx
+                    # syntax is the same as for No/Only filters
+                    lfilter = parse_filter(lexer, lexer.rest_line())
+
+                    pre_dict = apply_predict(lexer, node, pre_dict)
+
+                    node.content += [(lexer.filename, lexer.linenum, JoinFilter(lfilter, lexer.line))]
+
+                elif typet == LSuffix:
+                    # Parse:
+                    #    suffix SUFFIX
+                    if pre_dict:
+                        pre_dict = apply_predict(lexer, node, pre_dict)
+                    token_type, token_val = lexer.get_next_check([LIdentifier])
+                    lexer.get_next_check([LEndL])
+                    suffix_operator = Suffix().set_operands(None, token_val)
+                    # Suffix will be applied as all other elements in current node are processed:
+                    suffix = (lexer.filename, lexer.linenum, suffix_operator)
+
                 elif typet == LInclude:
                     # Parse:
                     #    include relative file patch to working directory.
                     path = lexer.rest_line_as_LString()
                     filename = os.path.expanduser(path)
                     if (isinstance(lexer.reader, FileReader) and
-                       not os.path.isabs(filename)):
+                            not os.path.isabs(filename)):
                         filename = os.path.join(
                             os.path.dirname(lexer.filename),
                             filename)
@@ -1746,7 +1838,90 @@ class Parser(object):
                                          lexer.line))
             raise
 
+    # join filter_1 filter_2 .....
+    # Multiply all dicts:
+    # all-dicts-match-filter_1 * all-dicts-match-filter_2 * ....
+    # <join only_one_filter> == <only only_one_filter>
+    # Also works: join filter_1 filter_1
+    # Transforms to: all_variants_match_filter_1 * all_variants_mats_filter_1
+    #
+    # Example:
+    # join a
+    # join a
+    # Transforms into:
+    # join a a
     def get_dicts(self, node=None, ctx=[], content=[], shortname=[], dep=[]):
+        """
+        Process 'join' entry, unpack join filter for node
+        ctx - node labels/names
+        content - previous content in plain
+        Return: dictionary
+        """
+        node = node or self.node
+
+        # Node is a current block. It has content, its contents: node.content
+        # Content withoun joins
+        new_content = []
+
+        # All joins in current node
+        joins = []
+
+        for t in node.content:
+            filename, linenum, obj = t
+
+            if not isinstance(obj, JoinFilter):
+                new_content.append(t)
+                continue
+
+            # Accummulate all joins at one node
+            joins += [t]
+
+        if not joins:
+            # Return generator
+            for d in self.get_dicts_plain(node, ctx, content, shortname, dep):
+                yield d
+        else:
+            # Rewrite all separate joins in one node as many `only'
+            onlys = []
+            for j in joins:
+                filename, linenum, obj = j
+                for word in obj.filter:
+                    f = OnlyFilter([word], str(word))
+                    onlys += [(filename, linenum, f)]
+
+            node.content = new_content
+            for d in self.multiply_join(onlys, node, ctx, content, shortname, dep):
+                yield d
+
+    # Multiplie all joins. Return dictionaries one by one
+    # Each `join' is the same as `only' filter
+    # This functions is supposed to be a generator, recursive generator
+    def multiply_join(self, onlys, node=None, ctx=[], content=[], shortname=[], dep=[]):
+        # Current join/only
+        only = onlys[:1]
+        remains = onlys[1:]
+
+        orig_node = copy.deepcopy(node)
+        node.content += only
+
+        if not remains:
+            for d in self.get_dicts_plain(node, ctx, content, shortname, dep):
+                yield d
+        else:
+            for d1 in self.get_dicts_plain(node, ctx, content, shortname, dep):
+                # Current frame multiply by all variants from bottom
+                for d2 in self.multiply_join(remains, orig_node, ctx, content, shortname, dep):
+                    name_x = d1["name"]
+                    name_x += "." + d2["name"]
+                    shortname_x = d1["shortname"]
+                    shortname_x += "." + d2["shortname"]
+                    d = d1.copy()
+                    d.update(d2)
+                    d["name"] = name_x
+                    d["shortname"] = shortname_x
+                    yield d
+
+    def get_dicts_plain(self, node=None, ctx=[], content=[], shortname=[], dep=[]):
         """
         Generate dictionaries from the code parsed so far.  This should
         be called after parsing something.
@@ -1775,7 +1950,7 @@ class Parser(object):
                 if obj.requires_action(ctx, ctx_set, labels):
                     # This filter requires action now
                     if type(obj) is OnlyFilter or type(obj) is NoFilter:
-                        if not obj in blocked_filters:
+                        if obj not in blocked_filters:
                             self._debug("    filter did not pass: %r (%s:%s)",
                                         obj.line, filename, linenum)
                             failed_filters.append(t)
@@ -1809,7 +1984,7 @@ class Parser(object):
                        failed_internal_filters):
             all_content = content + node.content
             for t in failed_external_filters + failed_internal_filters:
-                if not t in all_content:
+                if t not in all_content:
                     return True
             for t in failed_external_filters:
                 _, _, external_filter = t
@@ -1819,7 +1994,7 @@ class Parser(object):
                                                   labels):
                     return False
             for t in failed_internal_filters:
-                if not t in node.content:
+                if t not in node.content:
                     return True
 
             for t in failed_internal_filters:
@@ -1857,7 +2032,6 @@ class Parser(object):
 
         # Check previously failed filters
         for i, failed_case in enumerate(node.failed_cases):
-            # pylint: disable=W0142
             if not might_pass(*failed_case):
                 self._debug("\n*    this subtree has failed before %s\n"
                             "         content: %s\n"
@@ -1866,6 +2040,7 @@ class Parser(object):
                 del node.failed_cases[i]
                 node.failed_cases.appendleft(failed_case)
                 return
+
         # Check content and unpack it into new_content
         new_content = []
         new_external_filters = []
@@ -1882,7 +2057,7 @@ class Parser(object):
 
         # Recurse into children
         count = 0
-        if self.defaults and not node.var_name in self.expand_defaults:
+        if self.defaults and node.var_name not in self.expand_defaults:
             for n in node.children:
                 for d in self.get_dicts(n, ctx, new_content, shortname, dep):
                     count += 1
@@ -1891,6 +2066,7 @@ class Parser(object):
                     break
         else:
             for n in node.children:
+                # print ("XXX Dive in with: %s" % new_content)
                 for d in self.get_dicts(n, ctx, new_content, shortname, dep):
                     count += 1
                     yield d
@@ -1899,8 +2075,24 @@ class Parser(object):
             self._debug("    reached leaf, returning it")
             d = {"name": name, "dep": dep,
                  "shortname": ".".join([str(sn.name) for sn in shortname])}
+            # print("XXX NEW CONTENT: IS : %s" % new_content)
             for _, _, op in new_content:
                 op.apply_to_dict(d)
+            # Merge suffixes
+            d_orig = d.copy()
+            for key in d_orig:
+                if key not in _reserved_keys and isinstance(key, tuple):
+                    if options.skipdups:
+                        # Drop vars with suffixes matches general var val
+                        gen_var_name = key[0]
+                        if gen_var_name in d_orig and d_orig[gen_var_name] == d_orig[key]:
+                            print("Drop: %s" % (gen_var_name,))
+                            d.pop(key)
+                            continue
+                    # reverse order of suffixes
+                    new_key = key[:1] + key[1:][::-1]
+                    new_key = ''.join((map(str, new_key)))
+                    d[new_key] = d.pop(key)
             yield d
         # If this node did not produce any dicts, remember the failed filters
         # of its descendants
@@ -1926,24 +2118,26 @@ class Parser(object):
 
 def print_dicts_default(options, dicts):
     """Print dictionaries in the default mode"""
-    for i, d in enumerate(dicts):
+    for count, dic in enumerate(dicts):
+        postfix_parse(dic)
         if options.fullname:
-            print "dict %4d:  %s" % (i + 1, d["name"])
+            print "dict %4d:  %s" % (count + 1, dic["name"])
         else:
-            print "dict %4d:  %s" % (i + 1, d["shortname"])
+            print "dict %4d:  %s" % (count + 1, dic["shortname"])
         if options.contents:
-            keys = d.keys()
+            keys = dic.keys()
             keys.sort()
             for key in keys:
-                print "    %s = %s" % (key, d[key])
+                print "    %s = %s" % (key, dic[key])
 
 
 # pylint: disable=W0613
 def print_dicts_repr(options, dicts):
     import pprint
     print "["
-    for d in dicts:
-        print "%s," % (pprint.pformat(d))
+    for dic in dicts:
+        postfix_parse(dic)
+        print "%s," % (pprint.pformat(dic))
     print "]"
 
 
@@ -1952,6 +2146,77 @@ def print_dicts(options, dicts):
         print_dicts_repr(options, dicts)
     else:
         print_dicts_default(options, dicts)
+
+
+def convert_data_size(size, default_sufix='B'):
+    """
+    Convert data size from human readable units to an int of arbitrary size.
+
+    :param size: Human readable data size representation (string).
+    :param default_sufix: Default sufix used to represent data.
+    :return: Int with data size in the appropriate order of magnitude.
+    """
+    orders = {'B': 1,
+              'K': 1024,
+              'M': 1024 * 1024,
+              'G': 1024 * 1024 * 1024,
+              'T': 1024 * 1024 * 1024 * 1024,
+              }
+
+    order = re.findall("([BbKkMmGgTt])", size[-1])
+    if not order:
+        size += default_sufix
+        order = [default_sufix]
+
+    return int(float(size[0:-1]) * orders[order[0].upper()])
+
+
+def compare_string(str1, str2):
+    """
+    Compare two int string and return -1, 0, 1.
+    It can compare two memory value even in sufix
+
+    :param str1: The first string
+    :param str2: The second string
+
+    :Return: Rteurn -1, when str1<  str2
+                     0, when str1 = str2
+                     1, when str1>  str2
+    """
+    order1 = re.findall("([BbKkMmGgTt])", str1)
+    order2 = re.findall("([BbKkMmGgTt])", str2)
+    if order1 or order2:
+        value1 = convert_data_size(str1, "M")
+        value2 = convert_data_size(str2, "M")
+    else:
+        value1 = int(str1)
+        value2 = int(str2)
+    if value1 < value2:
+        return -1
+    elif value1 == value2:
+        return 0
+    else:
+        return 1
+
+
+def postfix_parse(dic):
+    tmp_dict = {}
+    for key in dic:
+        if key.endswith("_max"):
+            tmp_key = key.split("_max")[0]
+            if (not dic.has_key(tmp_key) or
+                    compare_string(dic[tmp_key], dic[key]) > 0):
+                tmp_dict[tmp_key] = dic[key]
+        elif key.endswith("_min"):
+            tmp_key = key.split("_min")[0]
+            if (not dic.has_key(tmp_key) or
+                    compare_string(dic[tmp_key], dic[key]) < 0):
+                tmp_dict[tmp_key] = dic[key]
+        elif key.endswith("_fixed"):
+            tmp_key = key.split("_fixed")[0]
+            tmp_dict[tmp_key] = dic[key]
+    for key in tmp_dict:
+        dic[key] = tmp_dict[key]
 
 
 if __name__ == "__main__":
@@ -1972,6 +2237,8 @@ if __name__ == "__main__":
     parser.add_option("-e", "--expand", dest="expand", type="string",
                       help="list of vartiant which should be expanded when"
                            " defaults is enabled.  \"name, name, name\"")
+    parser.add_option("-s", "--skip-dups", dest="skipdups", default=True, action="store_false",
+                      help="Don't drop variables with different suffixes and same val")
 
     options, args = parser.parse_args()
     if not args:
